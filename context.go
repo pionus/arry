@@ -15,12 +15,19 @@ import (
 type Context interface {
 	Response() http.ResponseWriter
 	Request() *http.Request
+	// get param
 	Param(key string) string
+	// get cookie
+	Cookie(name string) *http.Cookie
+	SetCookie(cookie *http.Cookie)
+	Cookies() []*http.Cookie
+	// set status
 	Status(code int)
 	GetStatus() int
 	Set(key string, value interface{})
 	Get(key string) interface{}
 	SetContentType(value string)
+	// reply response immidiatly
 	Reply()
 	Text(code int, body string)
 	JSON(code int, body interface{})
@@ -49,6 +56,23 @@ func (c *context) Request() *http.Request {
 
 func (c *context) Param(key string) string {
 	return c.params[key]
+}
+
+func (c *context) Cookie(name string) *http.Cookie {
+	cookie, err := c.Request().Cookie(name)
+	if err != nil {
+		return nil
+	}
+
+	return cookie
+}
+
+func (c *context) SetCookie(cookie *http.Cookie) {
+	http.SetCookie(c.Response(), cookie)
+}
+
+func (c *context) Cookies() []*http.Cookie {
+	return c.Request().Cookies()
 }
 
 func (c *context) Status(code int) {
