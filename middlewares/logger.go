@@ -15,7 +15,7 @@ func Logger(next arry.Handler) arry.Handler {
         path := req.URL.Path
         ua := req.Header.Get("User-Agent")
 
-        log.Printf("%s|%s|%s\n", req.RemoteAddr, path, ua)
+        log.Printf("%s|%s|%s|%s\n", req.RemoteAddr, req.Method, path, ua)
 
         next(ctx)
 
