@@ -166,6 +166,9 @@ func (c *context) Push(url string) error {
 func getMineType(file string) string {
 	ext := filepath.Ext(file)
 	t := mime.TypeByExtension(ext)
+	if t == "" {
+		t = "text/plain"
+	}
 	return t
 }
 
