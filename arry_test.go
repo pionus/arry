@@ -12,6 +12,14 @@ type user struct {
 }
 
 
+var jim = &user{
+    Name: "jim",
+    Age: 26,
+}
+
+const jimJSON = `{"name":"jim","age":26}`
+
+
 func TestArry(t *testing.T) {
     arry := New()
     request("GET", "/", arry)
@@ -32,6 +40,22 @@ func TestGet(t *testing.T) {
     }
 }
 
+
+func TestPost(t *testing.T) {
+    arry := New()
+    router := arry.Router()
+
+    router.Post("/post", func (ctx Context) {
+        ctx.Text(200, "OK")
+    })
+
+    code, _ := request("POST", "/post", arry)
+    if code != 200 {
+        t.Errorf("post is failed")
+    }
+}
+
+
 func TestURLParam(t *testing.T) {
     arry := New()
     router := arry.Router()
@@ -44,24 +68,6 @@ func TestURLParam(t *testing.T) {
     code, body := request("GET", "/jim", arry)
     if code != 200 || body != "jim" {
         t.Errorf("response is not correct")
-    }
-}
-
-func TestJSON(t *testing.T) {
-    arry := New()
-    router := arry.Router()
-
-    router.Get("/", func(ctx Context) {
-        jim := &user{
-            Name: "jim",
-            Age: 26,
-        }
-		ctx.JSON(200, jim)
-	})
-
-    code, body := request("GET", "/", arry)
-    if code != 200 {
-        t.Errorf("response is not correct, %s", body)
     }
 }
 

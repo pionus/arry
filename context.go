@@ -21,6 +21,7 @@ type Context interface {
 	Cookie(name string) *http.Cookie
 	SetCookie(cookie *http.Cookie)
 	Cookies() []*http.Cookie
+	Decode(i interface{}) error
 	// set status
 	Status(code int)
 	GetStatus() int
@@ -73,6 +74,11 @@ func (c *context) SetCookie(cookie *http.Cookie) {
 
 func (c *context) Cookies() []*http.Cookie {
 	return c.Request().Cookies()
+}
+
+func (c *context) Decode(i interface{}) error {
+	body := c.Request().Body
+	return json.NewDecoder(body).Decode(i)
 }
 
 func (c *context) Status(code int) {
