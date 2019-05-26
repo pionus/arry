@@ -29,7 +29,7 @@ type Context interface {
 	Get(key string) interface{}
 	SetContentType(value string)
 	// reply response immidiatly
-	Reply()
+	Reply(code int)
 	Text(code int, body string)
 	JSON(code int, body interface{})
 	File(name string)
@@ -45,6 +45,12 @@ type context struct {
 	params map[string]string
 	store map[string]interface{}
 	template *template.Template
+}
+
+
+type JSONTemplate struct {
+	Code int `json:"code"`
+	Message string `json:"message"`
 }
 
 func (c *context) Response() http.ResponseWriter {
@@ -110,9 +116,19 @@ func (c *context) SetContentType(value string) {
 	}
 }
 
-func (c *context) Reply() {
-	body := http.StatusText(c.code)
-	c.Response().Write([]byte(body))
+func (c *context) Reply(code int) {
+	message := http.StatusText(c.code)
+	acceptType := c.Request().Header.Get("Accept")
+
+	switch acceptType {
+	case "application/json":
+		body := JSONTemplate{ code, message }
+		c.JSON(code, body)
+		return
+	default:
+		c.Text(code, message)
+		return
+	}
 }
 
 
@@ -132,14 +148,14 @@ func (c *context) JSON(code int, body interface{}) {
 func (c *context) File(name string) {
 	f, err := os.Open(name)
 	if err != nil {
-		c.Reply()
+		c.Reply(404)
 		return
 	}
 	defer f.Close()
 
 	fi, _ := f.Stat()
 	if fi.IsDir() {
-		c.Reply()
+		c.Reply(404)
 		return
 	}
 

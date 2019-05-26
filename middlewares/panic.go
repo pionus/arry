@@ -13,7 +13,6 @@ func Panic(next arry.Handler) arry.Handler {
 
 func panicHandler(ctx arry.Context) {
 	if e := recover(); e != nil {
-		ctx.Status(500)
-        ctx.Reply()
+        ctx.Reply(500)
 	}
 }

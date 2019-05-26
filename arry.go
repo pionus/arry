@@ -132,5 +132,5 @@ func applyMiddlewares(h Handler, middlewares []Middleware) Handler {
 
 
 func defaultHandler(ctx Context) {
-	ctx.Reply()
+	ctx.Reply(404)
 }
