@@ -32,6 +32,7 @@ type Context interface {
 	Reply(code int)
 	Text(code int, body string)
 	JSON(code int, body interface{})
+	JSONBlob(code int, body []byte)
 	File(name string)
 	Render(code int, name string, data interface{})
 	Push(url string) error
@@ -143,6 +144,12 @@ func (c *context) JSON(code int, body interface{}) {
 	c.SetContentType("application/json")
 	c.Status(code)
 	encoder.Encode(body)
+}
+
+func (c *context) JSONBlob(code int, body []byte) {
+	c.SetContentType("application/json")
+	c.Status(code)
+	c.Response().Write(body)
 }
 
 func (c *context) File(name string) {
