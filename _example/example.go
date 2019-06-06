@@ -21,6 +21,7 @@ func main() {
 	a := arry.New()
     a.Use(middlewares.Logger)
     a.Use(middlewares.Panic)
+    a.Use(middlewares.Gzip)
 
     a.Static("/static", "_example/assets")
 
