@@ -48,6 +48,14 @@ type context struct {
 }
 
 
+func NewContext(r *http.Request, w http.ResponseWriter) Context {
+	return &context{
+		request: r,
+		response: &Response{Writer: w, Code: http.StatusNotFound},
+	}
+}
+
+
 type JSONTemplate struct {
 	Code int `json:"code"`
 	Message string `json:"message"`

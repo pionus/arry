@@ -58,11 +58,7 @@ func (a *Arry) Static(url string, dir string) {
 }
 
 func (a *Arry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := &context{
-		request: r,
-		response: &Response{Writer: w, Code: http.StatusNotFound},
-		template: a.template,
-	}
+	ctx := NewContext(r, w)
 
 	n := a.router.Route(ctx.Request().URL.Path, ctx)
 
