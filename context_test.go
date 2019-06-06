@@ -11,7 +11,7 @@ import (
 func TestJSON(t *testing.T) {
     rec := httptest.NewRecorder()
     ctx := &context{
-        response: rec,
+        response: &Response{Writer: rec},
     }
 
     ctx.JSON(200, jim)
@@ -24,7 +24,7 @@ func TestJSON(t *testing.T) {
 func TestJSONBlob(t *testing.T) {
     rec := httptest.NewRecorder()
     ctx := &context{
-        response: rec,
+        response: &Response{Writer: rec},
     }
 
     data, _ := json.Marshal(jim)

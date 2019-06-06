@@ -13,14 +13,14 @@ import (
 
 
 type Context interface {
-	Response() http.ResponseWriter
+	Response() *Response
 	Request() *http.Request
 	// get param
 	Param(key string) string
 	// get cookie
 	Cookie(name string) *http.Cookie
-	SetCookie(cookie *http.Cookie)
 	Cookies() []*http.Cookie
+	SetCookie(cookie *http.Cookie)
 	Decode(i interface{}) error
 	// set status
 	Status(code int)
@@ -40,9 +40,8 @@ type Context interface {
 
 
 type context struct {
-	response http.ResponseWriter
+	response *Response
 	request *http.Request
-	code int
 	params map[string]string
 	store map[string]interface{}
 	template *template.Template
@@ -54,7 +53,7 @@ type JSONTemplate struct {
 	Message string `json:"message"`
 }
 
-func (c *context) Response() http.ResponseWriter {
+func (c *context) Response() *Response {
 	return c.response
 }
 
@@ -75,12 +74,12 @@ func (c *context) Cookie(name string) *http.Cookie {
 	return cookie
 }
 
-func (c *context) SetCookie(cookie *http.Cookie) {
-	http.SetCookie(c.Response(), cookie)
-}
-
 func (c *context) Cookies() []*http.Cookie {
 	return c.Request().Cookies()
+}
+
+func (c *context) SetCookie(cookie *http.Cookie) {
+	http.SetCookie(c.Response(), cookie)
 }
 
 func (c *context) Decode(i interface{}) error {
@@ -89,12 +88,11 @@ func (c *context) Decode(i interface{}) error {
 }
 
 func (c *context) Status(code int) {
-	c.code = code
-	c.Response().WriteHeader(c.code)
+	c.Response().Code = code
 }
 
 func (c *context) GetStatus() int {
-	return c.code
+	return c.Response().Code
 }
 
 func (c *context) Set(key string, value interface{}) {
@@ -118,7 +116,7 @@ func (c *context) SetContentType(value string) {
 }
 
 func (c *context) Reply(code int) {
-	message := http.StatusText(c.code)
+	message := http.StatusText(code)
 	acceptType := c.Request().Header.Get("Accept")
 
 	switch acceptType {
@@ -169,7 +167,7 @@ func (c *context) File(name string) {
 	mimeType := getMineType(name)
 	c.SetContentType(mimeType)
 
-	c.code = http.StatusOK
+	c.Status(http.StatusOK)
 	http.ServeContent(c.Response(), c.Request(), fi.Name(), fi.ModTime(), f)
 }
 
@@ -180,7 +178,7 @@ func (c *context) Render(code int, name string, data interface{}) {
 }
 
 func (c *context) Push(url string) error {
-	pusher, ok := c.Response().(http.Pusher)
+	pusher, ok := c.Response().Writer.(http.Pusher)
 
 	if ok {
 		return pusher.Push(url, nil)
