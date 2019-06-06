@@ -24,7 +24,6 @@ type Context interface {
 	Decode(i interface{}) error
 	// set status
 	Status(code int)
-	GetStatus() int
 	Set(key string, value interface{})
 	Get(key string) interface{}
 	SetContentType(value string)
@@ -97,10 +96,6 @@ func (c *context) Decode(i interface{}) error {
 
 func (c *context) Status(code int) {
 	c.Response().Code = code
-}
-
-func (c *context) GetStatus() int {
-	return c.Response().Code
 }
 
 func (c *context) Set(key string, value interface{}) {

@@ -20,6 +20,6 @@ func Logger(next arry.Handler) arry.Handler {
         next(ctx)
 
         delta := time.Now().Sub(start)
-        log.Printf("%d|%s|%dns\n", ctx.GetStatus(), path, delta.Nanoseconds())
+        log.Printf("%d|%s|%dns\n", ctx.Response().Code, path, delta.Nanoseconds())
     }
 }
