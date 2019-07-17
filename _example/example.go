@@ -24,6 +24,7 @@ func main() {
     a.Use(middlewares.Gzip)
 
     a.Static("/static", "_example/assets")
+    a.Views("assets/")
 
     router := a.Router()
 
@@ -55,6 +56,10 @@ func main() {
             Age: 26,
         }
         ctx.JSON(http.StatusOK, jim)
+    })
+
+    router.Get("/render", func(ctx arry.Context) {
+        ctx.Render(200, "static.html", nil)
     })
 
 	err := a.Start(":8087")

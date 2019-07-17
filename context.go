@@ -5,16 +5,18 @@ import (
 	// "fmt"
 	"os"
 	"mime"
+	"bytes"
 	"path/filepath"
 	"net/http"
 	"encoding/json"
-	"html/template"
 )
 
 
 type Context interface {
 	Response() *Response
 	Request() *http.Request
+	// set engine
+	SetEngine(engine Engine)
 	// get param
 	Param(key string) string
 	// get cookie
@@ -43,7 +45,7 @@ type context struct {
 	request *http.Request
 	params map[string]string
 	store map[string]interface{}
-	template *template.Template
+	engine Engine
 }
 
 
@@ -66,6 +68,10 @@ func (c *context) Response() *Response {
 
 func (c *context) Request() *http.Request {
 	return c.request
+}
+
+func (c *context) SetEngine(engine Engine) {
+	c.engine = engine
 }
 
 func (c *context) Param(key string) string {
@@ -135,9 +141,8 @@ func (c *context) Reply(code int) {
 
 
 func (c *context) Text(code int, body string) {
-	c.Status(code)
 	c.SetContentType("text/plain")
-	c.Response().Write([]byte(body))
+	c.Blob(code, []byte(body))
 }
 
 func (c *context) JSON(code int, body interface{}) {
@@ -149,6 +154,10 @@ func (c *context) JSON(code int, body interface{}) {
 
 func (c *context) JSONBlob(code int, body []byte) {
 	c.SetContentType("application/json")
+	c.Blob(code, body)
+}
+
+func (c *context) Blob(code int, body []byte) {
 	c.Status(code)
 	c.Response().Write(body)
 }
@@ -177,7 +186,10 @@ func (c *context) File(name string) {
 func (c *context) Render(code int, name string, data interface{}) {
 	c.Status(code)
 
-	c.template.ExecuteTemplate(c.Response(), name, data)
+	buf := new(bytes.Buffer)
+	c.engine.Render(buf, name, data, c)
+	c.SetContentType("text/html")
+	c.Blob(code, buf.Bytes())
 }
 
 func (c *context) Push(url string) error {

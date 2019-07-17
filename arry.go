@@ -1,11 +1,10 @@
 package arry
 
 import (
-	"path"
 	"net"
+	"path"
 	"net/http"
 	"crypto/tls"
-	"html/template"
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -19,7 +18,7 @@ type Middleware func(Handler) Handler
 type Arry struct {
 	router *Router
 	middlewares []Middleware
-	template *template.Template
+	Engine Engine
 
 	Server *http.Server
 	// DefaultRoute Handler
@@ -46,7 +45,7 @@ func (a *Arry) Use(middleware Middleware) {
 }
 
 func (a *Arry) Views(path string) {
-	a.template = template.Must(template.ParseGlob(path + "*.html"))
+	a.Engine = NewEngine(path, "html")
 }
 
 func (a *Arry) Static(url string, dir string) {
@@ -59,6 +58,7 @@ func (a *Arry) Static(url string, dir string) {
 
 func (a *Arry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := NewContext(r, w)
+	ctx.SetEngine(a.Engine)
 
 	n := a.router.Route(ctx.Request().URL.Path, ctx)
 
