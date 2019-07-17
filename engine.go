@@ -1,7 +1,9 @@
 package arry
 
 import (
+	"os"
 	"io"
+	"path"
 	"html/template"
 )
 
@@ -17,9 +19,12 @@ func (e *HTMLEngine) Render(w io.Writer, name string, data interface{}, ctx Cont
 	return e.template.ExecuteTemplate(w, name, data)
 }
 
-func NewEngine(path string, t string) Engine {
+func NewEngine(dir string, t string) Engine {
+	base, _ := os.Getwd()
+	p := path.Join(base, dir, "*.html")
+
 	engine := &HTMLEngine{
-		template: template.Must(template.ParseGlob(path + "*.html")),
+		template: template.Must(template.ParseGlob(p)),
 	}
 
 	return engine

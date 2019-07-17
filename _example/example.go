@@ -23,7 +23,7 @@ func main() {
     a.Use(middlewares.Panic)
     a.Use(middlewares.Gzip)
 
-    a.Static("/static", "_example/assets")
+    a.Static("/static", "assets")
     a.Views("assets/")
 
     router := a.Router()

@@ -1,6 +1,7 @@
 package arry
 
 import (
+	"os"
 	"net"
 	"path"
 	"net/http"
@@ -44,15 +45,19 @@ func (a *Arry) Use(middleware Middleware) {
 	a.middlewares = append(a.middlewares, middleware)
 }
 
-func (a *Arry) Views(path string) {
-	a.Engine = NewEngine(path, "html")
+func (a *Arry) Views(dir string) {
+	a.Engine = NewEngine(dir, "html")
 }
 
 func (a *Arry) Static(url string, dir string) {
+	base, _ := os.Getwd()
+
 	h := func(c Context) {
-		p := path.Join(dir, c.Param("*"))
+		target := path.Clean(c.Param("*"))
+		p := path.Join(base, dir, target)
 		c.File(p)
 	}
+
 	a.router.Get(url + "/*", h)
 }
 
