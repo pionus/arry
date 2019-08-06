@@ -18,7 +18,8 @@ func LoggerToFile(file string) arry.Middleware {
     if err != nil {
         log.Fatal(err)
     }
-    defer f.Close()
+
+    // WARNING: file is not closed by hand
 
     return LoggerToWriter(f)
 }
@@ -26,6 +27,7 @@ func LoggerToFile(file string) arry.Middleware {
 
 func LoggerToWriter(out io.Writer) arry.Middleware {
     logger := log.New(out, "", log.LstdFlags)
+    file, isFile := out.(*os.File)
 
     return func(next arry.Handler) arry.Handler {
         return func(ctx arry.Context) {
@@ -43,7 +45,7 @@ func LoggerToWriter(out io.Writer) arry.Middleware {
             delta := time.Now().Sub(start)
             logger.Printf("%d|%s|%dns\n", ctx.Response().Code, path, delta.Nanoseconds())
 
-            if file, ok := out.(*os.File); ok {
+            if isFile {
                 file.Sync()
             }
         }
