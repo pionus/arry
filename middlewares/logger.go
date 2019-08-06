@@ -42,6 +42,10 @@ func LoggerToWriter(out io.Writer) arry.Middleware {
 
             delta := time.Now().Sub(start)
             logger.Printf("%d|%s|%dns\n", ctx.Response().Code, path, delta.Nanoseconds())
+
+            if file, ok := out.(*os.File); ok {
+                file.Sync()
+            }
         }
     }
 }
