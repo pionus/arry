@@ -6,6 +6,7 @@ import (
 	"os"
 	"mime"
 	"bytes"
+	"io/ioutil"
 	"path/filepath"
 	"net/http"
 	"encoding/json"
@@ -23,6 +24,7 @@ type Context interface {
 	Cookie(name string) *http.Cookie
 	Cookies() []*http.Cookie
 	SetCookie(cookie *http.Cookie)
+	Body() []byte
 	Decode(i interface{}) error
 	// set status
 	Status(code int)
@@ -93,6 +95,11 @@ func (c *context) Cookies() []*http.Cookie {
 
 func (c *context) SetCookie(cookie *http.Cookie) {
 	http.SetCookie(c.Response(), cookie)
+}
+
+func (c *context) Body() []byte {
+	body, _ := ioutil.ReadAll(c.Request().Body)
+	return body
 }
 
 func (c *context) Decode(i interface{}) error {
