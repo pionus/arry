@@ -19,9 +19,9 @@ type user struct {
 
 func main() {
 	a := arry.New()
+    a.Use(middlewares.Gzip)
     a.Use(middlewares.Logger())
     a.Use(middlewares.Panic)
-    a.Use(middlewares.Gzip)
 
     a.Static("/static", "assets")
     a.Views("assets/")
@@ -60,6 +60,14 @@ func main() {
 
     router.Get("/render", func(ctx arry.Context) {
         ctx.Render(200, "static.html", nil)
+    })
+
+    router.Get("/render/1", func(ctx arry.Context) {
+        ctx.Render(200, "page1.html", nil)
+    })
+
+    router.Get("/render/2", func(ctx arry.Context) {
+        ctx.Render(200, "page2.html", nil)
     })
 
 	err := a.Start(":8087")
