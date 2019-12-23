@@ -1,0 +1,15 @@
+name: Unit Test
+
+on: push
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+    runs-on: ubuntu-latest
+    name: Testing Go
+    steps:
+      - uses: actions/checkout@master
+      - name: Setup Go
+        uses: actions/setup-go@v1
+      - run: go test ./...
