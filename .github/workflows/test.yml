@@ -5,12 +5,12 @@ on: push
 jobs:
   test:
     strategy:
-      fail-fast: false
+      fail-fast: true
     runs-on: ubuntu-latest
     name: Testing Go
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v2
       - name: Setup Go
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v2-beta
       - run: go get .
       - run: go test ./...
