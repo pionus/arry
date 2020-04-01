@@ -12,4 +12,5 @@ jobs:
       - uses: actions/checkout@master
       - name: Setup Go
         uses: actions/setup-go@v1
+      - run: go get .
       - run: go test ./...
