@@ -56,14 +56,26 @@ func (n *node) add(method string, pattern string, handler Handler) {
     paths := strings.Split(pattern, "/")[1:]
 
     child, components := n.traverse(paths, nil)
-    child.insert(method, components, handler)
+    child = child.pave(components)
+    child.methods[strings.ToUpper(method)] = handler
 }
 
 
-func (n *node) insert(method string, components []string, handler Handler) {
+func (n *node) addChild(pattern string, child *node) {
+    paths := strings.Split(pattern, "/")[1:]
+
+    end, components := n.traverse(paths, nil)
+    end = end.pave(components)
+    
+    end.isParam = child.isParam
+    end.children = child.children
+    end.methods = child.methods
+}
+
+
+func (n *node) pave(components []string) *node {
     if len(components) == 0 {
-        n.methods[strings.ToUpper(method)] = handler
-        return
+        return n
     }
 
     component := components[0]
@@ -80,7 +92,7 @@ func (n *node) insert(method string, components []string, handler Handler) {
 
     n.children = append(n.children, &child)
 
-    child.insert(method, components[1:], handler)
+    return child.pave(components[1:])
 }
 
 func setParams(key string, value string, ctx Context) {
@@ -120,6 +132,10 @@ func (r *Router) Post(pattern string, handler Handler) {
 
 func (r *Router) Put(pattern string, handler Handler) {
     r.Handle("PUT", pattern, handler)
+}
+
+func (r *Router) Graft(pattern string, router *Router) {
+    r.tree.addChild(pattern, router.tree)
 }
 
 
