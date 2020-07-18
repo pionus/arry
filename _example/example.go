@@ -3,6 +3,8 @@ package main
 import (
     "net/http"
     "fmt"
+    "os"
+    "os/signal"
     "log"
     "github.com/pionus/arry"
     "github.com/pionus/arry/middlewares"
@@ -69,13 +71,19 @@ func main() {
     router.Get("/render/2", func(ctx arry.Context) {
         ctx.Render(200, "page2.html", nil)
     })
+    
+    go func() {
+        err := a.Start(":8087")
 
-	err := a.Start(":8087")
+        if err != nil {
+            log.Fatalf("Could not start server: %s\n", err.Error())
+        }
+    }()
 
-    // err := app.StartTLS(":8087", "_example/server.crt", "_example/server.key")
+    quit := make(chan os.Signal)
+    signal.Notify(quit, os.Interrupt)
 
-	if err != nil {
-		log.Fatalf("Could not start server: %s\n", err.Error())
-	}
+    <-quit
+    log.Printf("shutdown")
 
 }
