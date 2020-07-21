@@ -3,9 +3,6 @@ package main
 import (
     "net/http"
     "fmt"
-    "os"
-    "os/signal"
-    "log"
     "github.com/pionus/arry"
     "github.com/pionus/arry/middlewares"
 )
@@ -71,19 +68,6 @@ func main() {
     router.Get("/render/2", func(ctx arry.Context) {
         ctx.Render(200, "page2.html", nil)
     })
-    
-    go func() {
-        err := a.Start(":8087")
 
-        if err != nil {
-            log.Fatalf("Could not start server: %s\n", err.Error())
-        }
-    }()
-
-    quit := make(chan os.Signal)
-    signal.Notify(quit, os.Interrupt)
-
-    <-quit
-    log.Printf("shutdown")
-
+    a.Start(":8087")
 }

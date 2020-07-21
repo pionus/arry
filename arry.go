@@ -5,7 +5,9 @@ import (
 	"net"
 	"path"
 	"net/http"
+	"os/signal"
 	"crypto/tls"
+	stdContext "context"
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -19,6 +21,7 @@ type Middleware func(Handler) Handler
 type Arry struct {
 	router *Router
 	middlewares []Middleware
+	graceful bool
 	Engine Engine
 
 	Server *http.Server
@@ -31,6 +34,7 @@ func New() *Arry {
 
 	arry := &Arry{
 		router: r,
+		graceful: true,
 	}
 
 	return arry
@@ -79,6 +83,9 @@ func (a *Arry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(ctx)
 }
 
+func (a *Arry) Graceful(enable bool) {
+	a.graceful = enable
+}
 
 func (a *Arry) Start(addr string) error {
 	a.Server = &http.Server{
@@ -109,6 +116,25 @@ func (a *Arry) StartTLS(addr string, domains... string) error {
 }
 
 func (a *Arry) StartServer(s *http.Server) error {
+	if !a.graceful {
+		return a.serve(s)
+	}
+
+	quit := make(chan os.Signal)
+	defer close(quit)
+
+	signal.Notify(quit, os.Interrupt)
+	
+	go func() {
+		a.serve(s)
+	}()
+
+	<-quit
+	err := a.Shutdown(stdContext.Background())
+	return err
+}
+
+func (a *Arry) serve(s *http.Server) error {
 	l, err := net.Listen("tcp", s.Addr)
 	if err != nil {
 		return err
@@ -119,6 +145,14 @@ func (a *Arry) StartServer(s *http.Server) error {
 	}
 
 	return s.Serve(l)
+}
+
+func (a *Arry) Close() error {
+	return a.Server.Close()
+}
+
+func (a *Arry) Shutdown(ctx stdContext.Context) error {
+	return a.Server.Shutdown(ctx)
 }
 
 
