@@ -3,7 +3,9 @@ package arry
 import (
 	"os"
 	"net"
+	"log"
 	"path"
+	"syscall"
 	"net/http"
 	"os/signal"
 	"crypto/tls"
@@ -122,16 +124,27 @@ func (a *Arry) StartServer(s *http.Server) error {
 
 	quit := make(chan os.Signal)
 	defer close(quit)
+	errs := make(chan error)
+	defer close(errs)
 
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	
 	go func() {
-		a.serve(s)
+		err := a.serve(s)
+		if err != nil {
+			errs <- err
+		}
 	}()
-
-	<-quit
-	err := a.Shutdown(stdContext.Background())
-	return err
+	
+	select {
+	case err := <-errs:
+		log.Println(err)
+		return err
+	case <-quit:
+		log.Println("Graceful shutting down...")
+		err := a.Shutdown(stdContext.Background())
+		return err
+	}
 }
 
 func (a *Arry) serve(s *http.Server) error {
@@ -139,6 +152,8 @@ func (a *Arry) serve(s *http.Server) error {
 	if err != nil {
 		return err
 	}
+
+	log.Printf("Listening at %s", s.Addr)
 
 	if s.TLSConfig != nil {
 		l = tls.NewListener(l, s.TLSConfig)
