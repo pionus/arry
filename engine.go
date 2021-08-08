@@ -4,7 +4,7 @@ import (
 	"os"
 	"io"
 	"path"
-	"html/template"
+	"text/template"
 )
 
 type Engine interface {
