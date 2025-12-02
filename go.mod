@@ -1,8 +1,10 @@
 module github.com/pionus/arry
 
-go 1.14
+go 1.24.0
+
+require golang.org/x/crypto v0.45.0
 
 require (
-	golang.org/x/crypto v0.6.0
-	golang.org/x/net v0.7.0 // indirect
+	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 )
