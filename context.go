@@ -1,14 +1,14 @@
 package arry
 
 import (
-	// "io"
 	// "fmt"
 	"os"
+	"io"
 	"mime"
 	"bytes"
-	"io/ioutil"
 	"path/filepath"
 	"net/http"
+	"net/url"
 	"encoding/json"
 )
 
@@ -20,6 +20,13 @@ type Context interface {
 	SetEngine(engine Engine)
 	// get param
 	Param(key string) string
+	// query parameters
+	Query(key string) string
+	QueryDefault(key string, defaultValue string) string
+	QueryParams() url.Values
+	// headers
+	Header(key string) string
+	SetHeader(key string, value string)
 	// get cookie
 	Cookie(name string) *http.Cookie
 	Cookies() []*http.Cookie
@@ -48,6 +55,8 @@ type context struct {
 	params map[string]string
 	store map[string]interface{}
 	engine Engine
+	body []byte  // Cached request body
+	bodyRead bool // Whether body has been read
 }
 
 
@@ -80,6 +89,35 @@ func (c *context) Param(key string) string {
 	return c.params[key]
 }
 
+// Query returns the query parameter value for the given key
+func (c *context) Query(key string) string {
+	return c.Request().URL.Query().Get(key)
+}
+
+// QueryDefault returns the query parameter value or default if not found
+func (c *context) QueryDefault(key string, defaultValue string) string {
+	val := c.Query(key)
+	if val == "" {
+		return defaultValue
+	}
+	return val
+}
+
+// QueryParams returns all query parameters
+func (c *context) QueryParams() url.Values {
+	return c.Request().URL.Query()
+}
+
+// Header returns the request header value for the given key
+func (c *context) Header(key string) string {
+	return c.Request().Header.Get(key)
+}
+
+// SetHeader sets a response header
+func (c *context) SetHeader(key string, value string) {
+	c.Response().Header().Set(key, value)
+}
+
 func (c *context) Cookie(name string) *http.Cookie {
 	cookie, err := c.Request().Cookie(name)
 	if err != nil {
@@ -98,13 +136,23 @@ func (c *context) SetCookie(cookie *http.Cookie) {
 }
 
 func (c *context) Body() []byte {
-	body, _ := ioutil.ReadAll(c.Request().Body)
-	return body
+	if !c.bodyRead {
+		body, err := io.ReadAll(c.Request().Body)
+		if err != nil {
+			// Log error but don't fail - return empty body
+			c.body = []byte{}
+		} else {
+			c.body = body
+		}
+		c.bodyRead = true
+	}
+	return c.body
 }
 
 func (c *context) Decode(i interface{}) error {
-	body := c.Request().Body
-	return json.NewDecoder(body).Decode(i)
+	// Use cached body to allow multiple reads
+	body := c.Body()
+	return json.NewDecoder(bytes.NewReader(body)).Decode(i)
 }
 
 func (c *context) Status(code int) {
@@ -195,7 +243,14 @@ func (c *context) Render(code int, name string, data interface{}) {
 
 	buf := new(bytes.Buffer)
 	c.engine.Render(buf, name, data, c)
-	c.SetContentType("text/html")
+
+	// Use engine's content type if available
+	if c.engine != nil {
+		c.SetContentType(c.engine.ContentType())
+	} else {
+		c.SetContentType("text/html; charset=utf-8")
+	}
+
 	c.Blob(code, buf.Bytes())
 }
 
