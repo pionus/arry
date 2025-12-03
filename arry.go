@@ -32,7 +32,6 @@ type Arry struct {
 
 func New() *Arry {
 	r := NewRouter()
-	r.DefaultHandler(defaultHandler)
 
 	arry := &Arry{
 		router: r,
@@ -71,9 +70,9 @@ func (a *Arry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := NewContext(r, w)
 	ctx.SetEngine(a.Engine)
 
-	n := a.router.Route(ctx.Request().URL.Path, ctx)
+	n := a.router.route(ctx.Request().URL.Path, ctx)
 
-	h := a.router.handler
+	h := a.router.Handler()
 
 	if n != nil {
 		if hd, ok := n.methods[r.Method]; ok {

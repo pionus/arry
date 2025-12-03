@@ -113,12 +113,17 @@ func setParams(key string, value string, ctx Context) {
 }
 
 type Router struct {
-    tree    *node
-    handler Handler
+    tree        *node
+    handler     Handler
+    middlewares []Middleware
 }
 
 
 func (r *Router) Handle(method string, pattern string, handler Handler) {
+    // Apply current layer middlewares
+    if len(r.middlewares) > 0 {
+        handler = applyMiddlewares(handler, r.middlewares)
+    }
     r.tree.add(method, pattern, handler)
 }
 
@@ -134,12 +139,65 @@ func (r *Router) Put(pattern string, handler Handler) {
     r.Handle("PUT", pattern, handler)
 }
 
-func (r *Router) Graft(pattern string, router *Router) {
-    r.tree.addChild(pattern, router.tree)
+// Delete registers a DELETE route on the router
+func (r *Router) Delete(pattern string, handler Handler) {
+    r.Handle("DELETE", pattern, handler)
+}
+
+// Patch registers a PATCH route on the router
+func (r *Router) Patch(pattern string, handler Handler) {
+    r.Handle("PATCH", pattern, handler)
+}
+
+// Options registers an OPTIONS route on the router
+func (r *Router) Options(pattern string, handler Handler) {
+    r.Handle("OPTIONS", pattern, handler)
+}
+
+// Head registers a HEAD route on the router
+func (r *Router) Head(pattern string, handler Handler) {
+    r.Handle("HEAD", pattern, handler)
+}
+
+// Any registers a route that matches all HTTP methods on the router
+func (r *Router) Any(pattern string, handler Handler) {
+    methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"}
+    for _, method := range methods {
+        r.Handle(method, pattern, handler)
+    }
+}
+
+// Match registers a route that matches the specified HTTP methods on the router
+func (r *Router) Match(methods []string, pattern string, handler Handler) {
+    for _, method := range methods {
+        r.Handle(method, pattern, handler)
+    }
+}
+
+func (r *Router) Graft(pattern string, subRouter *Router) {
+    // If parent router has middlewares, apply them to all handlers in the sub-router's tree
+    if len(r.middlewares) > 0 {
+        r.applyMiddlewaresToSubtree(subRouter.tree, r.middlewares)
+    }
+
+    r.tree.addChild(pattern, subRouter.tree)
+}
+
+// applyMiddlewaresToSubtree recursively applies middlewares to all handlers in the node tree
+func (r *Router) applyMiddlewaresToSubtree(n *node, middlewares []Middleware) {
+    // Apply middlewares to all HTTP methods in current node
+    for method, handler := range n.methods {
+        n.methods[method] = applyMiddlewares(handler, middlewares)
+    }
+
+    // Recursively apply to child nodes
+    for _, child := range n.children {
+        r.applyMiddlewaresToSubtree(child, middlewares)
+    }
 }
 
 
-func (r *Router) Route(url string, ctx Context) *node {
+func (r *Router) route(url string, ctx Context) *node {
     paths := strings.Split(url, "/")[1:]
     n, components := r.tree.traverse(paths, ctx)
 
@@ -150,14 +208,13 @@ func (r *Router) Route(url string, ctx Context) *node {
     return nil
 }
 
-
-// set default handler
-func (r *Router) DefaultHandler(handler Handler) {
-    r.handler = handler
+// Handler returns the default handler
+func (r *Router) Handler() Handler {
+    return r.handler
 }
 
 
-func NewRouter() *Router {
+func NewRouter(middlewares ...Middleware) *Router {
     node := node{
         component: "/",
         isParam: false,
@@ -165,8 +222,9 @@ func NewRouter() *Router {
     }
 
     router := &Router{
-        tree: &node,
-        handler: defaultHandler,
+        tree:        &node,
+        handler:     defaultHandler,
+        middlewares: middlewares,
     }
 
     return router

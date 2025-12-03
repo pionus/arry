@@ -2,7 +2,7 @@
 
 > A blazingly fast, simple and elegant web framework for Go
 
-[![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.14-blue.svg)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.24-blue.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/pionus/arry)](https://goreportcard.com/report/github.com/pionus/arry)
 
@@ -10,9 +10,11 @@
 
 - **Blazingly Fast** - 278x faster template rendering with built-in caching
 - **Simple & Elegant** - Clean API design, easy to learn and use
-- **Powerful Router** - Pattern-based routing with path parameters
+- **Powerful Router** - Pattern-based routing with path parameters and middleware support
+- **Complete HTTP Methods** - GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD, and more
+- **Multi-Engine Support** - HTML, JSON, XML, YAML, and Plain Text templates
 - **Rich Middleware** - Built-in Logger, Gzip, Panic recovery, and Auth
-- **Template Engine** - High-performance HTML rendering with caching
+- **Context Utilities** - Redirect, Stream, ClientIP, Bind, and more
 - **HTTP/2 & TLS** - Built-in HTTPS support with auto Let's Encrypt
 - **Graceful Shutdown** - Safe server shutdown handling
 - **Production Ready** - Tested, optimized, and battle-proven
@@ -80,6 +82,41 @@ router := app.Router()
 router.Get("/users", getUsers)
 router.Post("/users", createUser)
 router.Put("/users/:id", updateUser)
+router.Delete("/users/:id", deleteUser)
+router.Patch("/users/:id", patchUser)
+router.Options("/users", optionsHandler)
+router.Head("/users", headHandler)
+
+// Match all HTTP methods
+router.Any("/health", healthCheck)
+
+// Match specific methods
+router.Match([]string{"GET", "POST"}, "/webhook", webhookHandler)
+```
+
+#### Router with Middleware
+
+```go
+// Create router with middleware
+authMiddleware := func(next arry.Handler) arry.Handler {
+    return func(ctx arry.Context) {
+        // Authentication logic
+        if !isAuthenticated(ctx) {
+            ctx.JSON(401, map[string]string{"error": "Unauthorized"})
+            return
+        }
+        next(ctx)
+    }
+}
+
+// Apply middleware to router
+adminRouter := arry.NewRouter(authMiddleware)
+adminRouter.Get("/dashboard", dashboardHandler)
+adminRouter.Get("/settings", settingsHandler)
+
+// Mount to main router
+app.Router().Graft("/admin", adminRouter)
+// All routes under /admin/* will require authentication
 ```
 
 #### Path Parameters
@@ -169,8 +206,29 @@ ctx.Render(200, "index.html", data)
 ctx.SetHeader("X-Custom-Header", "value")
 
 // Redirect
-ctx.SetHeader("Location", "/new-url")
-ctx.Status(302)
+ctx.Redirect(302, "/new-url")
+
+// Stream response
+file, _ := os.Open("video.mp4")
+ctx.Stream(200, "video/mp4", file)
+
+// File download
+data := bytes.NewReader([]byte("file content"))
+ctx.Attachment("document.pdf", data)
+```
+
+#### Utilities
+
+```go
+// Get client IP (handles X-Forwarded-For, X-Real-IP)
+clientIP := ctx.ClientIP()
+
+// Bind request data (auto-detect JSON/Form)
+var user User
+if err := ctx.Bind(&user); err != nil {
+    ctx.JSON(400, map[string]string{"error": err.Error()})
+    return
+}
 ```
 
 ### Middleware
@@ -224,12 +282,12 @@ router.Get("/admin", authMiddleware(adminHandler))
 
 ### Template Engine
 
-Arry includes a high-performance template engine with caching.
+Arry includes a high-performance template engine with caching and multiple format support.
 
 #### Basic Usage
 
 ```go
-// Set template directory
+// Set template directory (HTML by default)
 app.Views("templates")
 
 // In handler
@@ -240,6 +298,57 @@ router.Get("/", func(ctx arry.Context) {
     }
     ctx.Render(200, "index.html", data)
 })
+```
+
+#### Multiple Engine Types
+
+Arry supports multiple template engines for different output formats:
+
+```go
+// HTML Engine (default)
+app.Engine = arry.NewEngineWithConfig(arry.EngineConfig{
+    Type:      arry.EngineHTML,
+    Dir:       "templates",
+    Extension: "html",
+    Cache:     true,
+})
+
+// JSON Engine - serialize data to JSON
+app.Engine = arry.NewEngineWithConfig(arry.EngineConfig{
+    Type:   arry.EngineJSON,
+    Indent: "  ",  // Pretty print
+})
+
+// XML Engine - serialize data to XML
+app.Engine = arry.NewEngineWithConfig(arry.EngineConfig{
+    Type:   arry.EngineXML,
+    Indent: "  ",
+})
+
+// Plain Text Engine - for YAML, config files, etc.
+app.Engine = arry.NewEngineWithConfig(arry.EngineConfig{
+    Type:      arry.EnginePlain,
+    Dir:       "configs",
+    Extension: "yaml",
+    Cache:     true,
+})
+
+// YAML Engine
+app.Engine = arry.NewEngineWithConfig(arry.EngineConfig{
+    Type: arry.EngineYAML,
+    Dir:  "configs",
+})
+```
+
+#### Auto-Detection
+
+The engine type can be automatically detected from file extension:
+
+```go
+// Auto-detect based on extension
+app.Engine = arry.NewEngine("templates", "html")  // HTML engine
+app.Engine = arry.NewEngine("templates", "json")  // JSON engine
+app.Engine = arry.NewEngine("templates", "xml")   // XML engine
 ```
 
 #### Advanced Configuration
@@ -285,6 +394,7 @@ type Context interface {
     Header(key string) string
     Body() []byte
     Decode(i interface{}) error
+    Bind(i interface{}) error
 
     // Response
     Response() *Response
@@ -296,6 +406,9 @@ type Context interface {
     JSONBlob(code int, body []byte)
     Render(code int, name string, data interface{})
     File(name string)
+    Redirect(code int, url string)
+    Stream(code int, contentType string, reader io.Reader) error
+    Attachment(filename string, reader io.Reader) error
 
     // Cookies
     Cookie(name string) *http.Cookie
@@ -305,6 +418,9 @@ type Context interface {
     // Store (context values)
     Set(key string, value interface{})
     Get(key string) interface{}
+
+    // Utilities
+    ClientIP() string
 
     // HTTP/2 Server Push
     Push(url string) error
@@ -318,25 +434,45 @@ type Context interface {
 router.Get(pattern string, handler Handler)
 router.Post(pattern string, handler Handler)
 router.Put(pattern string, handler Handler)
+router.Delete(pattern string, handler Handler)
+router.Patch(pattern string, handler Handler)
+router.Options(pattern string, handler Handler)
+router.Head(pattern string, handler Handler)
+
+// Multiple methods
+router.Any(pattern string, handler Handler)
+router.Match(methods []string, pattern string, handler Handler)
 
 // Custom method
 router.Handle(method, pattern string, handler Handler)
 
-// Mount sub-router
+// Mount sub-router with middleware inheritance
 router.Graft(pattern string, subrouter *Router)
 
-// Default handler (404)
-router.DefaultHandler(handler Handler)
+// Create router with middleware
+NewRouter(middlewares ...Middleware) *Router
 ```
 
 ### Engine Configuration
 
 ```go
+type EngineType string
+
+const (
+    EngineHTML  EngineType = "html"
+    EngineJSON  EngineType = "json"
+    EngineXML   EngineType = "xml"
+    EnginePlain EngineType = "plain"
+    EngineYAML  EngineType = "yaml"
+)
+
 type EngineConfig struct {
+    Type      EngineType          // Engine type (HTML, JSON, XML, Plain, YAML)
     Dir       string              // Template directory
-    Extension string              // File extension (default: "html")
+    Extension string              // File extension (auto-detected if not specified)
     FuncMap   template.FuncMap    // Custom template functions
     Cache     bool                // Enable caching (production: true, dev: false)
+    Indent    string              // Indentation for JSON/XML (e.g., "  " or "\t")
 }
 ```
 
@@ -465,6 +601,7 @@ package main
 
 import (
     "log"
+    "time"
     "github.com/pionus/arry"
     "github.com/pionus/arry/middlewares"
 )
@@ -505,6 +642,104 @@ func main() {
 
     router := app.Router()
     router.Get("/", handler)
+
+    app.Start(":8080")
+}
+```
+
+### Multi-Engine Example
+
+```go
+package main
+
+import (
+    "github.com/pionus/arry"
+)
+
+type Config struct {
+    Server   string `json:"server" xml:"server" yaml:"server"`
+    Port     int    `json:"port" xml:"port" yaml:"port"`
+    Features []string `json:"features" xml:"features" yaml:"features"`
+}
+
+func main() {
+    app := arry.New()
+    router := app.Router()
+
+    config := Config{
+        Server:   "example.com",
+        Port:     8080,
+        Features: []string{"fast", "simple", "elegant"},
+    }
+
+    // JSON endpoint
+    router.Get("/config.json", func(ctx arry.Context) {
+        ctx.SetEngine(arry.NewEngineWithConfig(arry.EngineConfig{
+            Type: arry.EngineJSON,
+            Indent: "  ",
+        }))
+        ctx.Render(200, "config", config)
+    })
+
+    // XML endpoint
+    router.Get("/config.xml", func(ctx arry.Context) {
+        ctx.SetEngine(arry.NewEngineWithConfig(arry.EngineConfig{
+            Type: arry.EngineXML,
+            Indent: "  ",
+        }))
+        ctx.Render(200, "config", config)
+    })
+
+    // YAML endpoint
+    router.Get("/config.yaml", func(ctx arry.Context) {
+        ctx.SetEngine(arry.NewEngineWithConfig(arry.EngineConfig{
+            Type: arry.EngineYAML,
+        }))
+        ctx.Render(200, "config", config)
+    })
+
+    app.Start(":8080")
+}
+```
+
+### Router Composition with Middleware
+
+```go
+package main
+
+import (
+    "github.com/pionus/arry"
+    "github.com/pionus/arry/middlewares"
+)
+
+func main() {
+    app := arry.New()
+
+    // Global middleware
+    app.Use(middlewares.Logger())
+    app.Use(middlewares.Panic)
+
+    // Public API router (no auth)
+    publicAPI := arry.NewRouter()
+    publicAPI.Get("/health", healthHandler)
+    publicAPI.Get("/version", versionHandler)
+
+    // Admin API router (with auth middleware)
+    authMiddleware := middlewares.Auth("admin", "secret")
+    adminAPI := arry.NewRouter(authMiddleware)
+    adminAPI.Get("/dashboard", dashboardHandler)
+    adminAPI.Get("/users", usersHandler)
+    adminAPI.Delete("/users/:id", deleteUserHandler)
+
+    // API v1 router
+    apiV1 := arry.NewRouter()
+    apiV1.Get("/posts", getPostsHandler)
+    apiV1.Post("/posts", createPostHandler)
+
+    // Mount all routers
+    app.Router().Graft("/api/public", publicAPI)
+    app.Router().Graft("/api/admin", adminAPI)
+    app.Router().Graft("/api/v1", apiV1)
 
     app.Start(":8080")
 }

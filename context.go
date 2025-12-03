@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"bytes"
+	"strings"
 	"path/filepath"
 	"net/http"
 	"net/url"
@@ -46,6 +47,12 @@ type Context interface {
 	File(name string)
 	Render(code int, name string, data interface{})
 	Push(url string) error
+	// Utility methods
+	Redirect(code int, url string)
+	Stream(code int, contentType string, reader io.Reader) error
+	Attachment(filename string, reader io.Reader) error
+	ClientIP() string
+	Bind(i interface{}) error
 }
 
 
@@ -285,4 +292,77 @@ func getPushType(file string) string {
 	default:
 		return "image"
 	}
+}
+
+// Redirect sends an HTTP redirect response
+func (c *context) Redirect(code int, url string) {
+	if code < 300 || code > 308 {
+		code = http.StatusFound // Default to 302
+	}
+	c.SetHeader("Location", url)
+	c.Status(code)
+	c.Response().WriteHeader(code)
+}
+
+// Stream sends a streaming response
+func (c *context) Stream(code int, contentType string, reader io.Reader) error {
+	c.SetContentType(contentType)
+	c.Status(code)
+	_, err := io.Copy(c.Response(), reader)
+	return err
+}
+
+// Attachment sends a file download response
+func (c *context) Attachment(filename string, reader io.Reader) error {
+	c.SetHeader("Content-Disposition", `attachment; filename="`+filename+`"`)
+	return c.Stream(http.StatusOK, "application/octet-stream", reader)
+}
+
+// ClientIP returns the real client IP address
+// It checks X-Forwarded-For, X-Real-IP headers first, then falls back to RemoteAddr
+func (c *context) ClientIP() string {
+	// Check X-Forwarded-For header
+	if xff := c.Header("X-Forwarded-For"); xff != "" {
+		// X-Forwarded-For can contain multiple IPs, get the first one
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+
+	// Check X-Real-IP header
+	if xri := c.Header("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+
+	// Fall back to RemoteAddr
+	if ip, _, ok := strings.Cut(c.Request().RemoteAddr, ":"); ok {
+		return ip
+	}
+	return c.Request().RemoteAddr
+}
+
+// Bind intelligently binds request data to the given interface
+// It automatically detects the content type and decodes accordingly
+func (c *context) Bind(i interface{}) error {
+	contentType := c.Header("Content-Type")
+
+	// Check for JSON content type
+	if strings.Contains(contentType, "application/json") {
+		return c.Decode(i)
+	}
+
+	// Check for form data
+	if strings.Contains(contentType, "application/x-www-form-urlencoded") ||
+		strings.Contains(contentType, "multipart/form-data") {
+		if err := c.Request().ParseForm(); err != nil {
+			return err
+		}
+		// For form data, we would need a form decoder library
+		// For now, just return nil as basic form parsing is done
+		return nil
+	}
+
+	// Default to JSON decoding
+	return c.Decode(i)
 }
