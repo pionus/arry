@@ -325,3 +325,285 @@ func TestRouterMatch(t *testing.T) {
 		t.Error("Match: PUT handler should not be set")
 	}
 }
+
+// TestRoutePriority tests that static routes have higher priority than param routes
+func TestRoutePriority(t *testing.T) {
+	router := NewRouter()
+
+	called := ""
+
+	// Register routes in "wrong" order (param before static)
+	router.Get("/users/:id", func(ctx Context) {
+		called = "param"
+		ctx.Text(200, "param route")
+	})
+
+	router.Get("/users/admin", func(ctx Context) {
+		called = "static"
+		ctx.Text(200, "static route")
+	})
+
+	// Test that static route wins despite registration order
+	req := httptest.NewRequest("GET", "/users/admin", nil)
+	w := httptest.NewRecorder()
+	ctx := &context{
+		request:  req,
+		response: &Response{Writer: w, Code: 404},
+		store:    make(map[string]interface{}),
+		params:   make(map[string]string),
+	}
+
+	node := router.route("/users/admin", ctx)
+	if node == nil {
+		t.Fatal("route not found")
+	}
+
+	handler := node.methods["GET"]
+	if handler == nil {
+		t.Fatal("handler not set")
+	}
+
+	handler(ctx)
+
+	if called != "static" {
+		t.Errorf("expected static route to be called, but got %s", called)
+	}
+}
+
+// TestParameterExtraction tests that parameters are correctly extracted
+func TestParameterExtraction(t *testing.T) {
+	router := NewRouter()
+
+	var capturedID string
+	router.Get("/users/:id", func(ctx Context) {
+		capturedID = ctx.Param("id")
+	})
+
+	req := httptest.NewRequest("GET", "/users/123", nil)
+	w := httptest.NewRecorder()
+	ctx := &context{
+		request:  req,
+		response: &Response{Writer: w, Code: 404},
+		store:    make(map[string]interface{}),
+		params:   make(map[string]string),
+	}
+
+	node := router.route("/users/123", ctx)
+	if node == nil {
+		t.Fatal("route not found")
+	}
+
+	handler := node.methods["GET"]
+	if handler == nil {
+		t.Fatal("handler not set")
+	}
+
+	handler(ctx)
+
+	if capturedID != "123" {
+		t.Errorf("expected id=123, got id=%s", capturedID)
+	}
+}
+
+// TestWildcardRoute tests that wildcard routes work correctly
+func TestWildcardRoute(t *testing.T) {
+	router := NewRouter()
+
+	var capturedPath string
+	router.Get("/files/*", func(ctx Context) {
+		capturedPath = ctx.Param("*")
+	})
+
+	req := httptest.NewRequest("GET", "/files/images/photo.jpg", nil)
+	w := httptest.NewRecorder()
+	ctx := &context{
+		request:  req,
+		response: &Response{Writer: w, Code: 404},
+		store:    make(map[string]interface{}),
+		params:   make(map[string]string),
+	}
+
+	node := router.route("/files/images/photo.jpg", ctx)
+	if node == nil {
+		t.Fatal("route not found")
+	}
+
+	handler := node.methods["GET"]
+	if handler == nil {
+		t.Fatal("handler not set")
+	}
+
+	handler(ctx)
+
+	if capturedPath != "images/photo.jpg" {
+		t.Errorf("expected path=images/photo.jpg, got path=%s", capturedPath)
+	}
+}
+
+// TestPriorityOrder tests the complete priority order: Static > Param > Wildcard
+func TestPriorityOrder(t *testing.T) {
+	router := NewRouter()
+
+	called := ""
+
+	// Register all three types of routes
+	router.Get("/files/*", func(ctx Context) {
+		called = "wildcard"
+	})
+
+	router.Get("/files/:name", func(ctx Context) {
+		called = "param"
+	})
+
+	router.Get("/files/readme.txt", func(ctx Context) {
+		called = "static"
+	})
+
+	// Test 1: Static route should win
+	called = ""
+	req := httptest.NewRequest("GET", "/files/readme.txt", nil)
+	w := httptest.NewRecorder()
+	ctx := &context{
+		request:  req,
+		response: &Response{Writer: w, Code: 404},
+		store:    make(map[string]interface{}),
+		params:   make(map[string]string),
+	}
+
+	node := router.route("/files/readme.txt", ctx)
+	if node != nil && node.methods["GET"] != nil {
+		node.methods["GET"](ctx)
+	}
+
+	if called != "static" {
+		t.Errorf("test 1: expected static, got %s", called)
+	}
+
+	// Test 2: Param route should win (no static match)
+	called = ""
+	ctx.params = make(map[string]string)
+	node = router.route("/files/other.txt", ctx)
+	if node != nil && node.methods["GET"] != nil {
+		node.methods["GET"](ctx)
+	}
+
+	if called != "param" {
+		t.Errorf("test 2: expected param, got %s", called)
+	}
+
+	// Test 3: Wildcard should win (multi-segment path)
+	called = ""
+	ctx.params = make(map[string]string)
+	node = router.route("/files/images/photo.jpg", ctx)
+	if node != nil && node.methods["GET"] != nil {
+		node.methods["GET"](ctx)
+	}
+
+	if called != "wildcard" {
+		t.Errorf("test 3: expected wildcard, got %s", called)
+	}
+}
+
+// TestMultipleParams tests routes with multiple parameters
+func TestMultipleParams(t *testing.T) {
+	router := NewRouter()
+
+	params := make(map[string]string)
+	router.Get("/users/:userId/posts/:postId", func(ctx Context) {
+		params["userId"] = ctx.Param("userId")
+		params["postId"] = ctx.Param("postId")
+	})
+
+	req := httptest.NewRequest("GET", "/users/123/posts/456", nil)
+	w := httptest.NewRecorder()
+	ctx := &context{
+		request:  req,
+		response: &Response{Writer: w, Code: 404},
+		store:    make(map[string]interface{}),
+		params:   make(map[string]string),
+	}
+
+	node := router.route("/users/123/posts/456", ctx)
+	if node == nil {
+		t.Fatal("route not found")
+	}
+
+	handler := node.methods["GET"]
+	if handler == nil {
+		t.Fatal("handler not set")
+	}
+
+	handler(ctx)
+
+	if params["userId"] != "123" {
+		t.Errorf("expected userId=123, got %s", params["userId"])
+	}
+	if params["postId"] != "456" {
+		t.Errorf("expected postId=456, got %s", params["postId"])
+	}
+}
+
+// TestEmptySegments tests that empty segments are handled correctly
+func TestEmptySegments(t *testing.T) {
+	router := NewRouter()
+
+	called := false
+	router.Get("/users/list", func(ctx Context) {
+		called = true
+	})
+
+	// Test with multiple slashes (empty segments)
+	req := httptest.NewRequest("GET", "/users/list", nil)
+	w := httptest.NewRecorder()
+	ctx := &context{
+		request:  req,
+		response: &Response{Writer: w, Code: 404},
+		store:    make(map[string]interface{}),
+		params:   make(map[string]string),
+	}
+
+	node := router.route("/users/list", ctx)
+	if node == nil {
+		t.Fatal("route not found")
+	}
+
+	if node.methods["GET"] != nil {
+		node.methods["GET"](ctx)
+	}
+
+	if !called {
+		t.Error("handler was not called")
+	}
+}
+
+// TestRootRoute tests the root route "/"
+func TestRootRoute(t *testing.T) {
+	router := NewRouter()
+
+	called := false
+	router.Get("/", func(ctx Context) {
+		called = true
+	})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	w := httptest.NewRecorder()
+	ctx := &context{
+		request:  req,
+		response: &Response{Writer: w, Code: 404},
+		store:    make(map[string]interface{}),
+		params:   make(map[string]string),
+	}
+
+	node := router.route("/", ctx)
+	if node == nil {
+		t.Fatal("route not found")
+	}
+
+	if node.methods["GET"] != nil {
+		node.methods["GET"](ctx)
+	}
+
+	if !called {
+		t.Error("root handler was not called")
+	}
+}
