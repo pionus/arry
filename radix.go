@@ -143,7 +143,7 @@ func (n *radixNode) insertRecursive(method string, segments []string, handler Ha
 // insertStatic handles insertion of static route segments with LCP-based prefix compression
 func (n *radixNode) insertStatic(method, segment string, segments []string, handler Handler, depth int) {
 	// Search for existing child with common prefix
-	for i, child := range n.children {
+	for _, child := range n.children {
 		lcp := longestCommonPrefix(segment, child.prefix)
 
 		if lcp > 0 {
@@ -158,20 +158,12 @@ func (n *radixNode) insertStatic(method, segment string, segments []string, hand
 				child.splitNode(lcp)
 			}
 
-			// Case 3: Segment continues beyond LCP - create new sibling
+			// Case 3: Segment continues beyond matched prefix
 			if lcp < len(segment) {
-				newChild := &radixNode{
-					prefix:   segment[lcp:],
-					label:    segment[lcp],
-					nodeType: ntStatic,
-					methods:  make(map[string]Handler),
-				}
-				// Insert new child after the split point
-				n.children = append(n.children[:i+1], append([]*radixNode{newChild}, n.children[i+1:]...)...)
-				n.sortChildren()
-				newChild.insertRecursive(method, segments, handler, depth+1)
+				// Recursively insert the remaining suffix into the matched child
+				child.insertStatic(method, segment[lcp:], segments, handler, depth)
 			} else {
-				// Segment matches exactly up to child prefix
+				// Segment fully consumed by the (possibly split) child prefix
 				child.insertRecursive(method, segments, handler, depth+1)
 			}
 			return
@@ -205,14 +197,9 @@ func (n *radixNode) searchRecursive(segments []string, ctx Context) *radixNode {
 
 	next := segments[1:]
 
-	// PRIORITY 1: Static routes (exact match) - HIGHEST PRIORITY
-	for _, child := range n.children {
-		if child.prefix == segment {
-			result := child.searchRecursive(next, ctx)
-			if result != nil {
-				return result
-			}
-		}
+	// PRIORITY 1: Static routes with prefix-compressed walking - HIGHEST PRIORITY
+	if result := n.matchStatic(segment, next, ctx); result != nil {
+		return result
 	}
 
 	// PRIORITY 2: Parameter routes - MEDIUM PRIORITY
@@ -232,6 +219,33 @@ func (n *radixNode) searchRecursive(segments []string, ctx Context) *radixNode {
 	}
 
 	// No match found
+	return nil
+}
+
+// matchStatic walks through prefix-compressed static children to match a full URL segment.
+// After LCP compression, a segment like "assets" may be split into nodes "a" → "ssets".
+// This method traverses the compressed prefix chain to find the correct node.
+func (n *radixNode) matchStatic(segment string, nextSegments []string, ctx Context) *radixNode {
+	for _, child := range n.children {
+		if len(child.prefix) > len(segment) || segment[:len(child.prefix)] != child.prefix {
+			continue
+		}
+
+		remaining := segment[len(child.prefix):]
+		if remaining == "" {
+			// Entire segment consumed — proceed to next URL segment
+			result := child.searchRecursive(nextSegments, ctx)
+			if result != nil {
+				return result
+			}
+		} else {
+			// Partial match within segment — continue walking prefix tree
+			result := child.matchStatic(remaining, nextSegments, ctx)
+			if result != nil {
+				return result
+			}
+		}
+	}
 	return nil
 }
 

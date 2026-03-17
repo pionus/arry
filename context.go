@@ -274,13 +274,38 @@ func (c *context) Push(url string) error {
 }
 
 
+var mimeTypes = map[string]string{
+	".js":    "application/javascript",
+	".mjs":   "application/javascript",
+	".css":   "text/css; charset=utf-8",
+	".html":  "text/html; charset=utf-8",
+	".json":  "application/json",
+	".xml":   "application/xml",
+	".svg":   "image/svg+xml",
+	".png":   "image/png",
+	".jpg":   "image/jpeg",
+	".jpeg":  "image/jpeg",
+	".gif":   "image/gif",
+	".webp":  "image/webp",
+	".ico":   "image/x-icon",
+	".woff":  "font/woff",
+	".woff2": "font/woff2",
+	".ttf":   "font/ttf",
+	".otf":   "font/otf",
+	".pdf":   "application/pdf",
+	".wasm":  "application/wasm",
+	".map":   "application/json",
+}
+
 func getMineType(file string) string {
-	ext := filepath.Ext(file)
-	t := mime.TypeByExtension(ext)
-	if t == "" {
-		t = "text/plain"
+	ext := strings.ToLower(filepath.Ext(file))
+	if t, ok := mimeTypes[ext]; ok {
+		return t
 	}
-	return t
+	if t := mime.TypeByExtension(ext); t != "" {
+		return t
+	}
+	return "application/octet-stream"
 }
 
 func getPushType(file string) string {

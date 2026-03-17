@@ -577,6 +577,85 @@ func TestEmptySegments(t *testing.T) {
 }
 
 // TestRootRoute tests the root route "/"
+// TestLCPPrefixCollision tests routes that share a common prefix at the same segment level.
+// This reproduces the bug where /assets/* and /article both start with "a",
+// causing LCP compression to break routing.
+func TestLCPPrefixCollision(t *testing.T) {
+	router := NewRouter()
+
+	called := ""
+
+	// Register routes that share the prefix "a" at segment level 1
+	router.Get("/assets/*", func(ctx Context) {
+		called = "assets-wildcard"
+	})
+	router.Get("/article", func(ctx Context) {
+		called = "article"
+	})
+	router.Get("/article/:slug", func(ctx Context) {
+		called = "article-slug"
+	})
+	router.Get("/api/articles", func(ctx Context) {
+		called = "api-articles"
+	})
+	router.Get("/health", func(ctx Context) {
+		called = "health"
+	})
+	router.Get("/", func(ctx Context) {
+		called = "root"
+	})
+
+	tests := []struct {
+		path     string
+		expected string
+		param    string // expected param value
+		paramKey string // param key to check
+	}{
+		{"/assets/neural-bg.js", "assets-wildcard", "neural-bg.js", "*"},
+		{"/assets/styles/main.css", "assets-wildcard", "styles/main.css", "*"},
+		{"/assets/components/posts-list.js", "assets-wildcard", "components/posts-list.js", "*"},
+		{"/article", "article", "", ""},
+		{"/article/hello-world", "article-slug", "hello-world", "slug"},
+		{"/api/articles", "api-articles", "", ""},
+		{"/health", "health", "", ""},
+		{"/", "root", "", ""},
+	}
+
+	for _, tt := range tests {
+		called = ""
+		req := httptest.NewRequest("GET", tt.path, nil)
+		w := httptest.NewRecorder()
+		ctx := &context{
+			request:  req,
+			response: &Response{Writer: w, Code: 404},
+			store:    make(map[string]interface{}),
+			params:   make(map[string]string),
+		}
+
+		node := router.route(tt.path, ctx)
+		if node == nil {
+			t.Errorf("[%s] route not found", tt.path)
+			continue
+		}
+
+		handler := node.methods["GET"]
+		if handler == nil {
+			t.Errorf("[%s] GET handler not found", tt.path)
+			continue
+		}
+
+		handler(ctx)
+
+		if called != tt.expected {
+			t.Errorf("[%s] expected handler=%q, got=%q", tt.path, tt.expected, called)
+		}
+
+		if tt.paramKey != "" && ctx.Param(tt.paramKey) != tt.param {
+			t.Errorf("[%s] expected param %s=%q, got=%q", tt.path, tt.paramKey, tt.param, ctx.Param(tt.paramKey))
+		}
+	}
+}
+
 func TestRootRoute(t *testing.T) {
 	router := NewRouter()
 
