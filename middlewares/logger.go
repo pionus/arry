@@ -2,10 +2,12 @@ package middlewares
 
 import (
     "io"
-    "os"
-    "time"
-    "github.com/pionus/arry"
     "log"
+    "os"
+    "path/filepath"
+    "time"
+
+    "github.com/pionus/arry"
 )
 
 func Logger() arry.Middleware {
@@ -14,12 +16,14 @@ func Logger() arry.Middleware {
 
 
 func LoggerToFile(file string) arry.Middleware {
-    f, err := os.OpenFile(file, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0644)
+    if dir := filepath.Dir(file); dir != "." {
+        os.MkdirAll(dir, 0755)
+    }
+
+    f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
     if err != nil {
         log.Fatal(err)
     }
-
-    // WARNING: file is not closed by hand
 
     return LoggerToWriter(f)
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"bytes"
+	"strconv"
 	"strings"
 	"path/filepath"
 	"net/http"
@@ -24,6 +25,7 @@ type Context interface {
 	// query parameters
 	Query(key string) string
 	QueryDefault(key string, defaultValue string) string
+	QueryInt(key string, defaultValue int) int
 	QueryParams() url.Values
 	// headers
 	Header(key string) string
@@ -43,6 +45,7 @@ type Context interface {
 	Reply(code int)
 	Text(code int, body string)
 	JSON(code int, body interface{})
+	JSONError(code int, msg string)
 	JSONBlob(code int, body []byte)
 	File(name string)
 	Render(code int, name string, data interface{})
@@ -53,6 +56,8 @@ type Context interface {
 	Attachment(filename string, reader io.Reader) error
 	ClientIP() string
 	Bind(i interface{}) error
+	// Auth helpers
+	IsAuthed() bool
 }
 
 
@@ -108,6 +113,18 @@ func (c *context) QueryDefault(key string, defaultValue string) string {
 		return defaultValue
 	}
 	return val
+}
+
+// QueryInt returns the query parameter as an integer, or defaultValue if missing/invalid
+func (c *context) QueryInt(key string, defaultValue int) int {
+	val := c.Query(key)
+	if val == "" {
+		return defaultValue
+	}
+	if i, err := strconv.Atoi(val); err == nil {
+		return i
+	}
+	return defaultValue
 }
 
 // QueryParams returns all query parameters
@@ -212,6 +229,11 @@ func (c *context) JSON(code int, body interface{}) {
 	c.SetContentType("application/json")
 	c.Status(code)
 	encoder.Encode(body)
+}
+
+// JSONError sends a JSON error response: {"error": msg}
+func (c *context) JSONError(code int, msg string) {
+	c.JSON(code, map[string]string{"error": msg})
 }
 
 func (c *context) JSONBlob(code int, body []byte) {
@@ -390,4 +412,14 @@ func (c *context) Bind(i interface{}) error {
 
 	// Default to JSON decoding
 	return c.Decode(i)
+}
+
+// IsAuthed checks if the request has been authenticated by the Auth middleware
+func (c *context) IsAuthed() bool {
+	v := c.Get("auth")
+	if v == nil {
+		return false
+	}
+	b, ok := v.(bool)
+	return ok && b
 }

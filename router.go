@@ -164,6 +164,12 @@ func (r *Router) Handler() Handler {
 	return r.handler
 }
 
+// Use appends middlewares to the router.
+// Routes registered AFTER this call will have these middlewares applied.
+func (r *Router) Use(middlewares ...Middleware) {
+	r.middlewares = append(r.middlewares, middlewares...)
+}
+
 func NewRouter(middlewares ...Middleware) *Router {
 	router := &Router{
 		tree:        newRadixTree(),
