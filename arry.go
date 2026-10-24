@@ -1,9 +1,11 @@
 package arry
 
 import (
+	"bytes"
 	stdContext "context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
@@ -141,6 +143,11 @@ func (a *Arry) StaticWithConfig(url string, cfg StaticConfig) {
 // StaticFS serves the given filesystem under url. It is useful for assets
 // embedded with go:embed.
 func (a *Arry) StaticFS(url string, fsys fs.FS) {
+	a.StaticFSWithConfig(url, fsys, StaticConfig{})
+}
+
+// StaticFSWithConfig is StaticFS with cache and directory options.
+func (a *Arry) StaticFSWithConfig(url string, fsys fs.FS, cfg StaticConfig) {
 	if fsys == nil {
 		panic("arry: StaticFS called with nil filesystem")
 	}
@@ -150,9 +157,38 @@ func (a *Arry) StaticFS(url string, fsys fs.FS) {
 		prefix = "/"
 	}
 
-	h := http.StripPrefix(prefix, http.FileServerFS(fsys))
 	handler := func(c Context) {
-		h.ServeHTTP(c.Response(), c.Request())
+		requestPath := strings.TrimPrefix(c.Request().URL.Path, prefix)
+		name := strings.TrimPrefix(path.Clean("/"+requestPath), "/")
+		if cfg.Index != "" && (name == "" || strings.HasSuffix(name, "/")) {
+			name = path.Join(name, cfg.Index)
+		}
+
+		fi, err := fs.Stat(fsys, name)
+		if err != nil || fi.IsDir() {
+			c.Reply(http.StatusNotFound)
+			return
+		}
+
+		file, err := fsys.Open(name)
+		if err != nil {
+			c.Reply(http.StatusNotFound)
+			return
+		}
+		defer file.Close()
+
+		// http.ServeContent needs a ReadSeeker; embedded files may only be
+		// readable, so buffer non-seekable files.
+		body, err := io.ReadAll(file)
+		if err != nil {
+			c.Reply(http.StatusInternalServerError)
+			return
+		}
+
+		if cfg.MaxAge > 0 {
+			c.SetHeader("Cache-Control", fmt.Sprintf("public, max-age=%d", int64(cfg.MaxAge/time.Second)))
+		}
+		http.ServeContent(c.Response(), c.Request(), name, fi.ModTime(), bytes.NewReader(body))
 	}
 
 	a.router.Get(prefix+"/*", handler)
