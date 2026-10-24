@@ -1,5 +1,7 @@
 package arry
 
+import "strings"
+
 func setParams(key string, value string, ctx Context) {
 	if ctx == nil {
 		return
@@ -157,6 +159,16 @@ func (r *Router) graftNode(prefix string, n *radixNode, currentPath string) {
 
 func (r *Router) route(url string, ctx Context) *radixNode {
 	return r.tree.search(url, ctx)
+}
+
+// CatchAll returns the root catch-all route when one is registered. It is used
+// as a fallback when a path matches a static prefix node that has no handler.
+func (r *Router) CatchAll(urlPath string, ctx Context) *radixNode {
+	if r.tree.root == nil || r.tree.root.catchAllChild == nil {
+		return nil
+	}
+	setParams("*", strings.TrimPrefix(urlPath, "/"), ctx)
+	return r.tree.root.catchAllChild
 }
 
 // Handler returns the default handler

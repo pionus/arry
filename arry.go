@@ -200,6 +200,11 @@ func (a *Arry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx.SetEngine(a.Engine)
 
 	n := a.router.route(ctx.Request().URL.Path, ctx)
+	if n == nil || len(n.methods) == 0 {
+		if fallback := a.router.CatchAll(ctx.Request().URL.Path, ctx); fallback != nil {
+			n = fallback
+		}
+	}
 
 	h := a.router.Handler()
 	headFallback := false

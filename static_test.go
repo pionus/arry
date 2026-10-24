@@ -140,3 +140,19 @@ func TestNoContent(t *testing.T) {
 		t.Fatalf("status = %d, want 204", rec.Code)
 	}
 }
+
+func TestCatchAllFallsBackForStaticPrefix(t *testing.T) {
+	a := New()
+	r := a.Router()
+	r.Get("/index.php/search/:q", func(ctx Context) {
+		ctx.Text(http.StatusOK, "search")
+	})
+	r.Get("/*", func(ctx Context) {
+		ctx.Text(http.StatusOK, "fallback:"+ctx.Param("*"))
+	})
+
+	code, body := request("GET", "/index.php", a)
+	if code != 200 || body != "fallback:index.php" {
+		t.Fatalf("code=%d body=%q", code, body)
+	}
+}
