@@ -2,16 +2,21 @@ package middlewares
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pionus/arry"
 )
 
 // CORSConfig defines the configuration for the CORS middleware.
 type CORSConfig struct {
-	AllowOrigins []string
-	AllowMethods []string
-	AllowHeaders []string
+	AllowOrigins     []string
+	AllowMethods     []string
+	AllowHeaders     []string
+	ExposeHeaders    []string
+	AllowCredentials bool
+	MaxAge           time.Duration
 }
 
 // DefaultCORSConfig returns a permissive default CORS configuration.
@@ -40,6 +45,7 @@ func CORSWithConfig(config CORSConfig) arry.Middleware {
 
 	allowMethods := strings.Join(config.AllowMethods, ", ")
 	allowHeaders := strings.Join(config.AllowHeaders, ", ")
+	exposeHeaders := strings.Join(config.ExposeHeaders, ", ")
 
 	return func(next arry.Handler) arry.Handler {
 		return func(ctx arry.Context) {
@@ -49,9 +55,15 @@ func CORSWithConfig(config CORSConfig) arry.Middleware {
 				return
 			}
 
+			wildcard := false
 			allowed := false
 			for _, o := range config.AllowOrigins {
-				if o == "*" || o == origin {
+				if o == "*" {
+					wildcard = true
+					allowed = true
+					break
+				}
+				if o == origin {
 					allowed = true
 					break
 				}
@@ -62,16 +74,29 @@ func CORSWithConfig(config CORSConfig) arry.Middleware {
 				return
 			}
 
-			ctx.SetHeader("Access-Control-Allow-Origin", origin)
-			if config.AllowOrigins[0] == "*" {
+			if wildcard && !config.AllowCredentials {
 				ctx.SetHeader("Access-Control-Allow-Origin", "*")
+			} else {
+				ctx.SetHeader("Access-Control-Allow-Origin", origin)
+				addVary(ctx.Response().Header(), "Origin")
 			}
-			ctx.SetHeader("Access-Control-Allow-Methods", allowMethods)
-			ctx.SetHeader("Access-Control-Allow-Headers", allowHeaders)
 
-			// Handle preflight
-			if ctx.Request().Method == http.MethodOptions {
-				ctx.Status(http.StatusNoContent)
+			if config.AllowCredentials {
+				ctx.SetHeader("Access-Control-Allow-Credentials", "true")
+			}
+			if exposeHeaders != "" {
+				ctx.SetHeader("Access-Control-Expose-Headers", exposeHeaders)
+			}
+
+			if ctx.Request().Method == http.MethodOptions && ctx.Header("Access-Control-Request-Method") != "" {
+				ctx.SetHeader("Access-Control-Allow-Methods", allowMethods)
+				ctx.SetHeader("Access-Control-Allow-Headers", allowHeaders)
+				addVary(ctx.Response().Header(), "Access-Control-Request-Method")
+				addVary(ctx.Response().Header(), "Access-Control-Request-Headers")
+				if config.MaxAge > 0 {
+					ctx.SetHeader("Access-Control-Max-Age", strconv.Itoa(int(config.MaxAge/time.Second)))
+				}
+				ctx.NoContent(http.StatusNoContent)
 				return
 			}
 

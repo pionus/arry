@@ -24,6 +24,9 @@ func (r *Response) Write(b []byte) (int, error) {
 }
 
 func (r *Response) WriteHeader(code int) {
-    r.Writer.WriteHeader(code)
-    r.Sent = true
+	if r.Sent {
+		return
+	}
+	r.Writer.WriteHeader(code)
+	r.Sent = true
 }

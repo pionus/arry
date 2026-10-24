@@ -31,7 +31,6 @@ func LoggerToFile(file string) arry.Middleware {
 
 func LoggerToWriter(out io.Writer) arry.Middleware {
     logger := log.New(out, "", log.LstdFlags)
-    file, isFile := out.(*os.File)
 
     return func(next arry.Handler) arry.Handler {
         return func(ctx arry.Context) {
@@ -48,10 +47,6 @@ func LoggerToWriter(out io.Writer) arry.Middleware {
 
             delta := time.Now().Sub(start)
             logger.Printf("%d|%s|%dμs\n", ctx.Response().Code, path, delta.Microseconds())
-
-            if isFile {
-                file.Sync()
-            }
         }
     }
 }

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"encoding/json"
+	"log"
 )
 
 
@@ -43,6 +44,7 @@ type Context interface {
 	SetContentType(value string)
 	// reply response immidiatly
 	Reply(code int)
+	NoContent(code int)
 	Text(code int, body string)
 	JSON(code int, body interface{})
 	JSONError(code int, msg string)
@@ -74,8 +76,8 @@ type context struct {
 
 func NewContext(r *http.Request, w http.ResponseWriter) Context {
 	return &context{
-		request: r,
-		response: &Response{Writer: w, Code: http.StatusNotFound},
+		request:  r,
+		response: &Response{Writer: w, Code: http.StatusOK},
 	}
 }
 
@@ -218,6 +220,12 @@ func (c *context) Reply(code int) {
 	}
 }
 
+// NoContent writes the status code and ends the response without a body.
+func (c *context) NoContent(code int) {
+	c.Status(code)
+	c.Response().WriteHeader(code)
+}
+
 
 func (c *context) Text(code int, body string) {
 	c.SetContentType("text/plain")
@@ -268,18 +276,20 @@ func (c *context) File(name string) {
 }
 
 func (c *context) Render(code int, name string, data interface{}) {
-	c.Status(code)
-
-	buf := new(bytes.Buffer)
-	c.engine.Render(buf, name, data, c)
-
-	// Use engine's content type if available
-	if c.engine != nil {
-		c.SetContentType(c.engine.ContentType())
-	} else {
-		c.SetContentType("text/html; charset=utf-8")
+	if c.engine == nil {
+		log.Printf("arry: render %q: no view engine configured", name)
+		c.Reply(http.StatusInternalServerError)
+		return
 	}
 
+	buf := new(bytes.Buffer)
+	if err := c.engine.Render(buf, name, data, c); err != nil {
+		log.Printf("arry: render %q: %v", name, err)
+		c.Reply(http.StatusInternalServerError)
+		return
+	}
+
+	c.SetContentType(c.engine.ContentType())
 	c.Blob(code, buf.Bytes())
 }
 

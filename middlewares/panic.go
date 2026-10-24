@@ -26,6 +26,9 @@ func PanicWithHandler(h PanicHandler) arry.Middleware {
 			defer func() {
 				if e := recover(); e != nil {
 					slog.Error("panic recovered", "error", e)
+					if ctx.Response().Sent {
+						return
+					}
 					h(ctx, e)
 				}
 			}()

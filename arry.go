@@ -1,15 +1,21 @@
 package arry
 
 import (
-	"os"
-	"net"
-	"log"
-	"path"
-	"syscall"
-	"net/http"
-	"os/signal"
 	"crypto/tls"
 	stdContext "context"
+	"fmt"
+	"io/fs"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path"
+	"path/filepath"
+	"sort"
+	"strings"
+	"syscall"
+	"time"
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -54,16 +60,89 @@ func (a *Arry) Views(dir string) {
 	a.Engine = NewEngine(dir, "html")
 }
 
-func (a *Arry) Static(url string, dir string) {
-	base, _ := os.Getwd()
+// StaticConfig configures a static file route.
+type StaticConfig struct {
+	// Dir is the directory served by the route.
+	Dir string
+	// MaxAge sets the Cache-Control max-age for served files. Zero disables it.
+	MaxAge time.Duration
+	// Index is the file served for directory requests (e.g. "index.html").
+	// Empty means directory requests return 404.
+	Index string
+}
 
-	h := func(c Context) {
-		target := path.Clean(c.Param("*"))
-		p := path.Join(base, dir, target)
-		c.File(p)
+// Static serves files from dir under url. Path traversal outside dir is rejected.
+func (a *Arry) Static(url string, dir string) {
+	a.StaticWithConfig(url, StaticConfig{Dir: dir})
+}
+
+// StaticWithConfig serves files from cfg.Dir under url with optional settings.
+func (a *Arry) StaticWithConfig(url string, cfg StaticConfig) {
+	base, err := filepath.Abs(cfg.Dir)
+	if err != nil {
+		panic(fmt.Sprintf("arry: static dir %q: %v", cfg.Dir, err))
 	}
 
-	a.router.Get(url + "/*", h)
+	h := func(c Context) {
+		rel := path.Clean("/" + c.Param("*"))
+		name := filepath.Join(base, filepath.FromSlash(rel))
+
+		if !isSubPath(base, name) {
+			c.Reply(http.StatusNotFound)
+			return
+		}
+
+		fi, err := os.Stat(name)
+		if err != nil {
+			c.Reply(http.StatusNotFound)
+			return
+		}
+		if fi.IsDir() {
+			if cfg.Index == "" {
+				c.Reply(http.StatusNotFound)
+				return
+			}
+			name = filepath.Join(name, cfg.Index)
+			if !isSubPath(base, name) {
+				c.Reply(http.StatusNotFound)
+				return
+			}
+			if _, err := os.Stat(name); err != nil {
+				c.Reply(http.StatusNotFound)
+				return
+			}
+		}
+
+		if cfg.MaxAge > 0 {
+			c.SetHeader("Cache-Control", fmt.Sprintf("public, max-age=%d", int64(cfg.MaxAge/time.Second)))
+		}
+
+		c.File(name)
+	}
+
+	a.router.Get(url+"/*", h)
+	a.router.Head(url+"/*", h)
+}
+
+// StaticFS serves the given filesystem under url. It is useful for assets
+// embedded with go:embed.
+func (a *Arry) StaticFS(url string, fsys fs.FS) {
+	if fsys == nil {
+		panic("arry: StaticFS called with nil filesystem")
+	}
+
+	prefix := strings.TrimSuffix(url, "/")
+	if prefix == "" {
+		prefix = "/"
+	}
+
+	h := http.StripPrefix(prefix, http.FileServerFS(fsys))
+	handler := func(c Context) {
+		h.ServeHTTP(c.Response(), c.Request())
+	}
+
+	a.router.Get(prefix+"/*", handler)
+	a.router.Head(prefix+"/*", handler)
 }
 
 func (a *Arry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -73,15 +152,83 @@ func (a *Arry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	n := a.router.route(ctx.Request().URL.Path, ctx)
 
 	h := a.router.Handler()
+	headFallback := false
 
 	if n != nil {
 		if hd, ok := n.methods[r.Method]; ok {
 			h = hd
+		} else if r.Method == http.MethodHead {
+			if hd, ok := n.methods[http.MethodGet]; ok {
+				h = hd
+				headFallback = true
+			}
+		} else if r.Method == http.MethodOptions && len(n.methods) > 0 {
+			allow := allowHeader(n.methods)
+			h = func(c Context) {
+				c.SetHeader("Allow", allow)
+				c.NoContent(http.StatusNoContent)
+			}
+		} else if len(n.methods) > 0 {
+			allow := allowHeader(n.methods)
+			h = func(c Context) {
+				c.SetHeader("Allow", allow)
+				c.Reply(http.StatusMethodNotAllowed)
+			}
 		}
+	}
+
+	if headFallback {
+		ctx.Response().Writer = headResponseWriter{ResponseWriter: ctx.Response().Writer}
 	}
 
 	h = applyMiddlewares(h, a.middlewares)
 	h(ctx)
+}
+
+// isSubPath reports whether target is base or inside base.
+func isSubPath(base, target string) bool {
+	rel, err := filepath.Rel(base, target)
+	if err != nil || filepath.IsAbs(rel) {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func allowHeader(methods map[string]Handler) string {
+	seen := make(map[string]bool, len(methods)+2)
+	for m := range methods {
+		seen[m] = true
+	}
+	seen[http.MethodHead] = true
+	seen[http.MethodOptions] = true
+
+	ordered := []string{
+		http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodOptions,
+	}
+	var allowed []string
+	for _, m := range ordered {
+		if seen[m] {
+			allowed = append(allowed, m)
+		}
+	}
+	sort.Strings(allowed)
+	return strings.Join(allowed, ", ")
+}
+
+// headResponseWriter discards the body while preserving headers and status.
+type headResponseWriter struct {
+	http.ResponseWriter
+}
+
+func (w headResponseWriter) Write(b []byte) (int, error) {
+	return len(b), nil
+}
+
+func (w headResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func (a *Arry) Graceful(enable bool) {
@@ -121,12 +268,11 @@ func (a *Arry) StartServer(s *http.Server) error {
 		return a.serve(s)
 	}
 
-	quit := make(chan os.Signal)
-	defer close(quit)
-	errs := make(chan error)
-	defer close(errs)
-
+	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
+
+	errs := make(chan error, 1)
 	
 	go func() {
 		err := a.serve(s)
