@@ -21,6 +21,16 @@ import (
 // with the auth state set, so handlers can still inspect it. With no methods,
 // every request passes through.
 func Auth(token string, methods ...string) arry.Middleware {
+	return AuthFunc(func(ctx arry.Context) bool {
+		got := requestToken(ctx.Request())
+		return token != "" && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+	}, methods...)
+}
+
+// AuthFunc is like Auth but delegates the authentication decision to verify.
+// The verifier may also attach state to the context (for example the signed-in
+// user) before returning true.
+func AuthFunc(verify func(arry.Context) bool, methods ...string) arry.Middleware {
 	guardSet := make(map[string]bool, len(methods))
 	for _, m := range methods {
 		guardSet[strings.ToUpper(m)] = true
@@ -28,8 +38,7 @@ func Auth(token string, methods ...string) arry.Middleware {
 
 	return func(next arry.Handler) arry.Handler {
 		return func(ctx arry.Context) {
-			got := requestToken(ctx.Request())
-			isAuthed := token != "" && subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
+			isAuthed := verify(ctx)
 			ctx.Set("auth", isAuthed)
 
 			if len(guardSet) > 0 && guardSet[ctx.Request().Method] && !isAuthed {

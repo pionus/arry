@@ -1,8 +1,8 @@
 package arry
 
 import (
-	"crypto/tls"
 	stdContext "context"
+	"crypto/tls"
 	"fmt"
 	"io/fs"
 	"log"
@@ -25,12 +25,11 @@ type Handler func(Context)
 
 type Middleware func(Handler) Handler
 
-
 type Arry struct {
-	router *Router
+	router      *Router
 	middlewares []Middleware
-	graceful bool
-	Engine Engine
+	graceful    bool
+	Engine      Engine
 
 	Server *http.Server
 	// DefaultRoute Handler
@@ -40,7 +39,7 @@ func New() *Arry {
 	r := NewRouter()
 
 	arry := &Arry{
-		router: r,
+		router:   r,
 		graceful: true,
 	}
 
@@ -51,13 +50,28 @@ func (a *Arry) Router() *Router {
 	return a.router
 }
 
-
 func (a *Arry) Use(middleware Middleware) {
 	a.middlewares = append(a.middlewares, middleware)
 }
 
 func (a *Arry) Views(dir string) {
 	a.Engine = NewEngine(dir, "html")
+}
+
+// ViewsWithConfig configures the app's view engine.
+func (a *Arry) ViewsWithConfig(config EngineConfig) {
+	a.Engine = NewEngineWithConfig(config)
+}
+
+// ViewsFS configures HTML views served from an fs.FS (for example go:embed).
+func (a *Arry) ViewsFS(dir string, fsys fs.FS) {
+	a.Engine = NewEngineWithConfig(EngineConfig{
+		Type:      EngineHTML,
+		Dir:       dir,
+		FS:        fsys,
+		Extension: "html",
+		Cache:     true,
+	})
 }
 
 // StaticConfig configures a static file route.
@@ -237,24 +251,24 @@ func (a *Arry) Graceful(enable bool) {
 
 func (a *Arry) Start(addr string) error {
 	a.Server = &http.Server{
-		Addr: addr,
+		Addr:    addr,
 		Handler: a,
 	}
 	return a.StartServer(a.Server)
 }
 
-func (a *Arry) StartTLS(addr string, domains... string) error {
+func (a *Arry) StartTLS(addr string, domains ...string) error {
 	certManager := autocert.Manager{
-        Prompt: autocert.AcceptTOS,
-        HostPolicy: autocert.HostWhitelist(domains...),
-		Cache: autocert.DirCache("certs"),
-    }
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(domains...),
+		Cache:      autocert.DirCache("certs"),
+	}
 
 	a.Server = &http.Server{
 		Addr: addr,
 		TLSConfig: &tls.Config{
-            GetCertificate: certManager.GetCertificate,
-        },
+			GetCertificate: certManager.GetCertificate,
+		},
 		Handler: a,
 	}
 
@@ -273,14 +287,14 @@ func (a *Arry) StartServer(s *http.Server) error {
 	defer signal.Stop(quit)
 
 	errs := make(chan error, 1)
-	
+
 	go func() {
 		err := a.serve(s)
 		if err != nil {
 			errs <- err
 		}
 	}()
-	
+
 	select {
 	case err := <-errs:
 		log.Println(err)
@@ -315,7 +329,6 @@ func (a *Arry) Shutdown(ctx stdContext.Context) error {
 	return a.Server.Shutdown(ctx)
 }
 
-
 func applyMiddlewares(h Handler, middlewares []Middleware) Handler {
 	for i := len(middlewares) - 1; i >= 0; i-- {
 		h = middlewares[i](h)
@@ -323,7 +336,6 @@ func applyMiddlewares(h Handler, middlewares []Middleware) Handler {
 
 	return h
 }
-
 
 func defaultHandler(ctx Context) {
 	ctx.Reply(404)

@@ -2,6 +2,7 @@ package arry
 
 import (
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"strings"
@@ -29,12 +30,13 @@ const (
 
 // EngineConfig holds configuration for template engine
 type EngineConfig struct {
-	Type      EngineType          // Engine type (html, json, yaml, xml, plain)
-	Dir       string              // Template directory
-	Extension string              // File extension (auto-detect from Type if empty)
-	FuncMap   template.FuncMap    // Custom template functions (for HTML/Plain engines)
-	Cache     bool                // Enable template caching (production: true, dev: false)
-	Indent    string              // Indentation for JSON/XML (optional, default: "  ")
+	Type      EngineType       // Engine type (html, json, yaml, xml, plain)
+	Dir       string           // Template directory
+	FS        fs.FS            // Optional template filesystem (e.g. embed.FS)
+	Extension string           // File extension (auto-detect from Type if empty)
+	FuncMap   template.FuncMap // Custom template functions (for HTML/Plain engines)
+	Cache     bool             // Enable template caching (production: true, dev: false)
+	Indent    string           // Indentation for JSON/XML (optional, default: "  ")
 }
 
 // detectEngineType infers engine type from file extension
@@ -108,24 +110,39 @@ func NewEngineWithConfig(config EngineConfig) Engine {
 		config.Type = EngineHTML
 	}
 
-	basedir := resolveDir(config.Dir)
+	basedir := config.Dir
+	if config.FS == nil {
+		basedir = resolveDir(config.Dir)
+	}
 
 	// Factory pattern: create appropriate engine
 	switch config.Type {
 	case EngineHTML:
+		if config.FS != nil {
+			return engine.NewHTMLEngineFS(config.FS, basedir, config.Extension, config.FuncMap, config.Cache)
+		}
 		return engine.NewHTMLEngine(basedir, config.Extension, config.FuncMap, config.Cache)
 	case EngineJSON:
 		return engine.NewJSONEngine(config.Indent)
 	case EngineXML:
 		return engine.NewXMLEngine(config.Indent)
 	case EnginePlain:
+		if config.FS != nil {
+			return engine.NewPlainEngineFS(config.FS, basedir, config.Extension, config.FuncMap, config.Cache)
+		}
 		return engine.NewPlainEngine(basedir, config.Extension, config.FuncMap, config.Cache)
 	case EngineYAML:
 		// YAML engine requires external package
 		// For now, treat as plain text
 		// TODO: Implement YAMLEngine with gopkg.in/yaml.v3
+		if config.FS != nil {
+			return engine.NewPlainEngineFS(config.FS, basedir, config.Extension, config.FuncMap, config.Cache)
+		}
 		return engine.NewPlainEngine(basedir, config.Extension, config.FuncMap, config.Cache)
 	default:
+		if config.FS != nil {
+			return engine.NewHTMLEngineFS(config.FS, basedir, config.Extension, config.FuncMap, config.Cache)
+		}
 		return engine.NewHTMLEngine(basedir, config.Extension, config.FuncMap, config.Cache)
 	}
 }
