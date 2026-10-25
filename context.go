@@ -2,19 +2,19 @@ package arry
 
 import (
 	// "fmt"
-	"os"
-	"io"
-	"mime"
 	"bytes"
-	"strconv"
-	"strings"
-	"path/filepath"
+	"encoding/json"
+	"io"
+	"log"
+	"mime"
+	"net"
 	"net/http"
 	"net/url"
-	"encoding/json"
-	"log"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 )
-
 
 type Context interface {
 	Response() *Response
@@ -62,17 +62,17 @@ type Context interface {
 	IsAuthed() bool
 }
 
-
 type context struct {
-	response *Response
-	request *http.Request
-	params map[string]string
-	store map[string]interface{}
-	engine Engine
-	body []byte  // Cached request body
-	bodyRead bool // Whether body has been read
+	response       *Response
+	request        *http.Request
+	params         map[string]string
+	store          map[string]interface{}
+	engine         Engine
+	body           []byte // Cached request body
+	bodyRead       bool   // Whether body has been read
+	trustProxy     bool
+	trustedProxies []*net.IPNet
 }
-
 
 func NewContext(r *http.Request, w http.ResponseWriter) Context {
 	return &context{
@@ -81,9 +81,8 @@ func NewContext(r *http.Request, w http.ResponseWriter) Context {
 	}
 }
 
-
 type JSONTemplate struct {
-	Code int `json:"code"`
+	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
 
@@ -211,7 +210,7 @@ func (c *context) Reply(code int) {
 
 	switch acceptType {
 	case "application/json":
-		body := JSONTemplate{ code, message }
+		body := JSONTemplate{code, message}
 		c.JSON(code, body)
 		return
 	default:
@@ -225,7 +224,6 @@ func (c *context) NoContent(code int) {
 	c.Status(code)
 	c.Response().WriteHeader(code)
 }
-
 
 func (c *context) Text(code int, body string) {
 	c.SetContentType("text/plain")
@@ -300,11 +298,10 @@ func (c *context) Push(url string) error {
 		return pusher.Push(url, nil)
 	} else {
 		asType := getPushType(url)
-		c.Response().Header().Add("Link", "<"+ url +">; rel=preload; as="+ asType)
+		c.Response().Header().Add("Link", "<"+url+">; rel=preload; as="+asType)
 		return nil
 	}
 }
-
 
 var mimeTypes = map[string]string{
 	".js":    "application/javascript",
@@ -378,25 +375,49 @@ func (c *context) Attachment(filename string, reader io.Reader) error {
 // ClientIP returns the real client IP address
 // It checks X-Forwarded-For, X-Real-IP headers first, then falls back to RemoteAddr
 func (c *context) ClientIP() string {
-	// Check X-Forwarded-For header
-	if xff := c.Header("X-Forwarded-For"); xff != "" {
-		// X-Forwarded-For can contain multiple IPs, get the first one
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
+	if c.trustProxy {
+		// Walk X-Forwarded-For from right to left and skip trusted proxies.
+		// This prevents a client-supplied leftmost entry from being trusted.
+		if xff := c.Header("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			var fallback string
+			for i := len(parts) - 1; i >= 0; i-- {
+				ip := net.ParseIP(strings.TrimSpace(parts[i]))
+				if ip == nil {
+					continue
+				}
+				if fallback == "" {
+					fallback = ip.String()
+				}
+				if !ipInNetworks(ip, c.trustedProxies) {
+					return ip.String()
+				}
+			}
+			if fallback != "" {
+				return fallback
+			}
 		}
-		return strings.TrimSpace(xff)
+
+		if xri := strings.TrimSpace(c.Header("X-Real-IP")); xri != "" {
+			if ip := net.ParseIP(xri); ip != nil {
+				return ip.String()
+			}
+		}
 	}
 
-	// Check X-Real-IP header
-	if xri := c.Header("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-
-	// Fall back to RemoteAddr
-	if ip, _, ok := strings.Cut(c.Request().RemoteAddr, ":"); ok {
-		return ip
+	if host, _, err := net.SplitHostPort(c.Request().RemoteAddr); err == nil {
+		return host
 	}
 	return c.Request().RemoteAddr
+}
+
+func ipInNetworks(ip net.IP, networks []*net.IPNet) bool {
+	for _, network := range networks {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // Bind intelligently binds request data to the given interface

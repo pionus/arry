@@ -28,10 +28,11 @@ type Handler func(Context)
 type Middleware func(Handler) Handler
 
 type Arry struct {
-	router      *Router
-	middlewares []Middleware
-	graceful    bool
-	Engine      Engine
+	router         *Router
+	middlewares    []Middleware
+	graceful       bool
+	Engine         Engine
+	trustedProxies []*net.IPNet
 
 	Server *http.Server
 	// DefaultRoute Handler
@@ -198,6 +199,10 @@ func (a *Arry) StaticFSWithConfig(url string, fsys fs.FS, cfg StaticConfig) {
 func (a *Arry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := NewContext(r, w)
 	ctx.SetEngine(a.Engine)
+	if c, ok := ctx.(*context); ok && a.trustsProxy(r.RemoteAddr) {
+		c.trustProxy = true
+		c.trustedProxies = a.trustedProxies
+	}
 
 	n := a.router.route(ctx.Request().URL.Path, ctx)
 	if n == nil || len(n.methods) == 0 {
@@ -284,6 +289,45 @@ func (w headResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// SetTrustedProxies configures the proxy CIDRs/IPs whose X-Forwarded-For and
+// X-Real-IP headers are trusted. Without this, client IPs come from RemoteAddr.
+func (a *Arry) SetTrustedProxies(proxies []string) error {
+	nets := make([]*net.IPNet, 0, len(proxies))
+	for _, raw := range proxies {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if _, network, err := net.ParseCIDR(raw); err == nil {
+			nets = append(nets, network)
+			continue
+		}
+		ip := net.ParseIP(raw)
+		if ip == nil {
+			return fmt.Errorf("arry: invalid trusted proxy %q", raw)
+		}
+		bits := 128
+		if ip.To4() != nil {
+			bits = 32
+		}
+		nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+	}
+	a.trustedProxies = nets
+	return nil
+}
+
+func (a *Arry) trustsProxy(remoteAddr string) bool {
+	if len(a.trustedProxies) == 0 {
+		return false
+	}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ipInNetworks(ip, a.trustedProxies)
 }
 
 func (a *Arry) Graceful(enable bool) {
